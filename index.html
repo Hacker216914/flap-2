@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Flappy — Fixed & Hardened (Made by flayric)</title>
+<style>
+  :root{
+    --bg1:#70c5ce; --bg2:#dff6ff; --accent:#ffcc00; --pipe:#2ecc71; --floor:#ded895;
+    --glass: rgba(255,255,255,0.93);
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Roboto,Arial}
+  body{display:flex;align-items:center;justify-content:center;background:linear-gradient(var(--bg1),var(--bg2))}
+  .container{position:relative;width:100%;height:100%;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  canvas{display:block;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+  .hud{position:absolute;left:16px;top:16px;z-index:60;color:#111;font-weight:700;display:flex;gap:14px;align-items:center;font-size:15px;background:var(--glass);padding:8px 10px;border-radius:10px}
+  .madeBy{position:absolute;right:16px;top:16px;z-index:60;font-weight:700;background:var(--glass);padding:8px 10px;border-radius:10px}
+  .modePanel{position:absolute;left:50%;top:18px;transform:translateX(-50%);z-index:58;display:flex;gap:8px;align-items:center;padding:8px;border-radius:10px;background:var(--glass);box-shadow:0 8px 18px rgba(0,0,0,0.12)}
+  .modeBtn{padding:8px 12px;border-radius:8px;border:1px solid #cfcfcf;background:#fff;cursor:pointer;font-weight:700}
+  .modeBtn.active{background:var(--accent);border-color:#bb9900}
+  .modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;min-width:320px;max-width:90vw;border-radius:14px;padding:20px;background:var(--glass);box-shadow:0 18px 46px rgba(0,0,0,0.25);text-align:center}
+  .modal h1{margin:0;font-size:34px;letter-spacing:2px}
+  .modal p{margin:8px 0 14px;color:#333}
+  .btnRow{display:flex;gap:12px;justify-content:center}
+  .btn{padding:10px 16px;border-radius:10px;border:0;background:var(--accent);cursor:pointer;font-weight:800}
+  .btn.secondary{background:#fff;border:1px solid #ddd}
+  .footerNote{position:absolute;left:16px;bottom:16px;z-index:60;background:var(--glass);padding:8px;border-radius:8px;font-size:13px}
+  .errorBox{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:999;padding:10px 14px;border-radius:10px;background:rgba(255,100,100,0.95);color:#fff;font-weight:700;display:none}
+  @media (max-width:520px){.modal{min-width:260px;padding:14px}.hud{font-size:13px}}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="errorBox" id="errorBox"></div>
+    <canvas id="gameCanvas" aria-label="Flappy game"></canvas>
+
+    <div class="hud" aria-hidden="false">
+      <div>Score: <span id="score">0</span></div>
+      <div>High: <span id="high">0</span></div>
+    </div>
+
+    <div class="madeBy">Made by flayric</div>
+
+    <div class="modePanel" id="modePanel" style="display:none">
+      <div style="font-weight:700;margin-right:6px">Display:</div>
+      <button class="modeBtn active" id="btnPC">PC</button>
+      <button class="modeBtn" id="btnPhone">Phone</button>
+      <div style="width:18px"></div>
+      <div style="font-weight:700;margin-right:6px">Control:</div>
+      <button class="modeBtn active" id="btnFlap">Flap</button>
+      <button class="modeBtn" id="btnMouse">Mouse</button>
+      <div style="width:18px"></div>
+      <button class="modeBtn" id="startBtn" style="background:#6bd36b;border-color:#4aa84a">Start Game</button>
+      <button class="modeBtn" id="exitBtn" style="background:#ff9b9b;border-color:#e76b6b">Menu</button>
+    </div>
+
+    <div class="modal" id="titleModal" role="dialog" aria-modal="true">
+      <h1>FLAPPY</h1>
+      <p>Polished edition — click Play to continue. Choose PC or Phone and Flap or Mouse next.</p>
+      <div class="btnRow" style="margin-top:6px">
+        <button class="btn" id="playBtn">Play</button>
+        <button class="btn secondary" id="howBtn">How to play</button>
+      </div>
+      <div style="margin-top:12px;font-size:13px;color:#444">Press <strong>ESC</strong> anytime to return to the menu.</div>
+    </div>
+
+    <div class="footerNote">Tip: Mouse Mode — move pointer to steer. Flap Mode — click or press Space to flap.</div>
+  </div>
+
+<script>
+/* ======================================================================
+   Flappy — Hardened full version with adaptive speed scaling
+   - In Flap mode: pipe speed increases by 1.2% every 10 points
+   - In Mouse mode: pipe speed increases by 1.5% every 15 points
+   - All previous features preserved (menu, modes, ESC, sounds, high score)
+   ====================================================================== */
+
+/* -----------------------
+   Virtual coordinates
+   ----------------------- */
+const VIRTUAL_WIDTH = 420;
+const VIRTUAL_HEIGHT = 600;
+
+/* -----------------------
+   DOM refs
+   ----------------------- */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const titleModal = document.getElementById('titleModal');
+const playBtn = document.getElementById('playBtn');
+const howBtn = document.getElementById('howBtn');
+
+const modePanel = document.getElementById('modePanel');
+const btnPC = document.getElementById('btnPC');
+const btnPhone = document.getElementById('btnPhone');
+const btnFlap = document.getElementById('btnFlap');
+const btnMouse = document.getElementById('btnMouse');
+const startBtn = document.getElementById('startBtn');
+const exitBtn = document.getElementById('exitBtn');
+
+const scoreEl = document.getElementById('score');
+const highEl = document.getElementById('high');
+const errorBox = document.getElementById('errorBox');
+
+/* -----------------------
+   Config & state
+   ----------------------- */
+const config = {
+  gravity: 0.16,
+  jumpForce: -5.0,
+  pipeWidth: 70,
+  pipeGap: 210,
+  pipeSpeedBase: 1.4, // base speed, will be scaled
+  floorHeight: 50,
+  spawnInterval: 170,
+  maxFallSpeed: 8,
+  maxRiseSpeed: -8,
+  mouseSmooth: 0.22
+};
+
+let currentPipeSpeed = config.pipeSpeedBase; // actual moving speed (scaled)
+
+let appState = 'menu'; // menu, ready, playing, gameover
+let displayMode = 'pc';
+let controlMode = 'flap';
+
+let frameCount = 0;
+let score = 0;
+let highScore = Number(localStorage.getItem('flappy_high') || 0);
+highEl.textContent = highScore;
+
+/* -----------------------
+   Bird & pipes
+   ----------------------- */
+const bird = {
+  x: 100,
+  y: VIRTUAL_HEIGHT / 2,
+  r: 14,
+  vel: 0,
+  tilt: 0,
+  bob: 0,
+  reset() { this.y = VIRTUAL_HEIGHT / 2; this.vel = 0; this.tilt = 0; this.bob = 0; },
+  flap() {
+    this.vel = config.jumpForce;
+    playSound('flap');
+  },
+  update() {
+    if (appState === 'playing') {
+      if (controlMode === 'mouse' && pointer.active) {
+        const dy = pointer.y - this.y;
+        this.y += dy * config.mouseSmooth;
+        this.vel = clamp(dy * 0.9, config.maxRiseSpeed, config.maxFallSpeed);
+      } else {
+        this.vel += config.gravity;
+        this.vel = clamp(this.vel, config.maxRiseSpeed, config.maxFallSpeed);
+        this.y += this.vel;
+      }
+
+      if (this.y - this.r < 0) { this.y = this.r; this.vel = 0; }
+      if (this.y + this.r >= VIRTUAL_HEIGHT - config.floorHeight) {
+        triggerDeath();
+      }
+
+      const targetTilt = clamp(this.vel / 12, -0.7, 0.7);
+      this.tilt += (targetTilt - this.tilt) * 0.08;
+    } else if (appState === 'ready') {
+      this.bob += 0.05;
+      this.y = VIRTUAL_HEIGHT / 2 + Math.sin(this.bob) * 7;
+      this.tilt += (-0.15 - this.tilt) * 0.08;
+    } else {
+      this.tilt += (0 - this.tilt) * 0.06;
+    }
+  },
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.tilt);
+    ctx.beginPath();
+    ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'yellow';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#333';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(2, 0);
+    ctx.lineTo(18, -8);
+    ctx.lineTo(10, 6);
+    ctx.closePath();
+    ctx.fillStyle = '#f4d03f';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(6, -4, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.ellipse(this.x + 6, VIRTUAL_HEIGHT - config.floorHeight - 6, this.r * 0.9, 6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.fill();
+  }
+};
+
+const pipes = []; // each: { x, top, passed }
+
+/* -----------------------
+   Utility
+   ----------------------- */
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+/* -----------------------
+   Lazy audio initialization
+   ----------------------- */
+let audioCtx = null;
+function ensureAudioCtx() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { audioCtx = null; }
+  }
+}
+
+function playTone(freq, duration = 0.08, type = 'sine', volume = 0.12) {
+  ensureAudioCtx(); if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = type; osc.frequency.value = freq; osc.connect(g); g.connect(audioCtx.destination);
+    const now = audioCtx.currentTime; g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+    osc.start(now); g.gain.exponentialRampToValueAtTime(0.0001, now + duration); osc.stop(now + duration + 0.02);
+  } catch (e) { /* ignore */ }
+}
+
+function playSound(name) {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+  if (name === 'flap') playTone(520, 0.09, 'square', 0.08);
+  else if (name === 'point') playTone(900, 0.06, 'sine', 0.09);
+  else if (name === 'death') { playTone(220, 0.12, 'sawtooth', 0.08); setTimeout(()=>playTone(170, 0.12, 'sawtooth', 0.07), 110); }
+}
+
+/* -----------------------
+   Difficulty scaling logic
+   - Flap mode: +1.2% every 10 points
+   - Mouse mode: +1.5% every 15 points
+   This computes currentPipeSpeed from base and score.
+   ----------------------- */
+function updateDifficulty() {
+  const base = config.pipeSpeedBase;
+  if (controlMode === 'flap') {
+    const levels = Math.floor(score / 10);
+    currentPipeSpeed = base * Math.pow(1.012, levels);
+  } else if (controlMode === 'mouse') {
+    const levels = Math.floor(score / 15);
+    currentPipeSpeed = base * Math.pow(1.015, levels);
+  } else {
+    currentPipeSpeed = base;
+  }
+}
+
+/* -----------------------
+   Pipes spawn & update
+   ----------------------- */
+let frameCountGlobal = 0;
+
+function spawnPipe() {
+  const minTop = 60;
+  const maxTop = VIRTUAL_HEIGHT - config.pipeGap - config.floorHeight - 80;
+  const top = Math.random() * (maxTop - minTop) + minTop;
+  pipes.push({ x: VIRTUAL_WIDTH + 10, top, passed: false });
+}
+
+function updatePipes() {
+  if (appState !== 'playing') return;
+
+  frameCountGlobal++;
+  if (frameCountGlobal % config.spawnInterval === 0) spawnPipe();
+
+  // Update difficulty continuously (so speed effect applies immediately after scoring)
+  updateDifficulty();
+
+  for (let i = pipes.length - 1; i >= 0; i--) {
+    const p = pipes[i];
+    p.x -= currentPipeSpeed; // use scaled speed
+
+    // scoring
+    if (!p.passed && p.x + config.pipeWidth < bird.x) {
+      p.passed = true;
+      score++;
+      scoreEl.textContent = score;
+      playSound('point');
+      // update high score persistently
+      if (score > highScore) { highScore = score; highEl.textContent = highScore; localStorage.setItem('flappy_high', highScore); }
+      // update difficulty after scoring (also handled at loop top)
+      updateDifficulty();
+    }
+
+    // remove off-screen
+    if (p.x + config.pipeWidth < -50) pipes.splice(i, 1);
+
+    // collision
+    const bl = bird.x - bird.r, br = bird.x + bird.r;
+    const bt = bird.y - bird.r, bb = bird.y + bird.r;
+    const pl = p.x, pr = p.x + config.pipeWidth;
+    const overlapX = br > pl && bl < pr;
+    const hitTop = bt < p.top;
+    const hitBottom = bb > p.top + config.pipeGap;
+    if (overlapX && (hitTop || hitBottom)) triggerDeath();
+  }
+}
+
+/* -----------------------
+   Death handling
+   ----------------------- */
+function triggerDeath() {
+  if (appState !== 'playing') return;
+  appState = 'gameover';
+  playSound('death');
+}
+
+/* -----------------------
+   Pointer / input mapping
+   ----------------------- */
+const pointer = { x: VIRTUAL_WIDTH / 2, y: VIRTUAL_HEIGHT / 2, active: false };
+
+function mapClientToVirtual(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const vx = (clientX - rect.left) * (VIRTUAL_WIDTH / rect.width);
+  const vy = (clientY - rect.top) * (VIRTUAL_HEIGHT / rect.height);
+  return { x: clamp(vx, 0, VIRTUAL_WIDTH), y: clamp(vy, 0, VIRTUAL_HEIGHT) };
+}
+
+canvas.addEventListener('mousemove', (e) => { const v = mapClientToVirtual(e.clientX, e.clientY); pointer.x = v.x; pointer.y = v.y; pointer.active = true; });
+canvas.addEventListener('mouseleave', () => pointer.active = false);
+canvas.addEventListener('touchmove', (e) => { const t = e.touches[0]; const v = mapClientToVirtual(t.clientX, t.clientY); pointer.x = v.x; pointer.y = v.y; pointer.active = true; e.preventDefault(); }, { passive: false });
+canvas.addEventListener('touchend', () => pointer.active = false);
+
+canvas.addEventListener('mousedown', (e) => {
+  ensureAudioCtx();
+  if (appState === 'ready') { appState = 'playing'; frameCountGlobal = 0; bird.flap(); return; }
+  if (appState === 'playing' && controlMode === 'flap') { bird.flap(); return; }
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault(); ensureAudioCtx();
+    if (appState === 'ready') { appState = 'playing'; frameCountGlobal = 0; bird.flap(); return; }
+    else if (appState === 'playing') { if (controlMode === 'flap') bird.flap(); return; }
+  } else if (e.code === 'Escape') { openMenu(); }
+});
+
+/* -----------------------
+   Menu & UI handlers
+   ----------------------- */
+function setActive(group, activeBtn) { for (const b of group) b.classList.remove('active'); activeBtn.classList.add('active'); }
+
+playBtn.addEventListener('click', () => { titleModal.style.display = 'none'; modePanel.style.display = 'flex'; appState = 'ready'; resetGameState(); });
+howBtn.addEventListener('click', () => { alert('How to play:\n\n- Flap mode: Click or press SPACE to flap.\n- Mouse mode: Move the mouse or touch to steer vertically.\n- Avoid pipes.\n- Press ESC to open the title menu.'); });
+
+btnPC.addEventListener('click', () => { displayMode = 'pc'; setActive([btnPC, btnPhone], btnPC); resizeCanvas(); });
+btnPhone.addEventListener('click', () => { displayMode = 'phone'; setActive([btnPC, btnPhone], btnPhone); resizeCanvas(); });
+btnFlap.addEventListener('click', () => { controlMode = 'flap'; setActive([btnFlap, btnMouse], btnFlap); updateDifficulty(); });
+btnMouse.addEventListener('click', () => { controlMode = 'mouse'; setActive([btnFlap, btnMouse], btnMouse); updateDifficulty(); });
+
+startBtn.addEventListener('click', () => { modePanel.style.display = 'none'; titleModal.style.display = 'none'; appState = 'ready'; resetGameState(); });
+exitBtn.addEventListener('click', () => { openMenu(); });
+
+function openMenu() { titleModal.style.display = 'block'; modePanel.style.display = 'none'; appState = 'menu'; resetGameState(); }
+function resetGameState() { score = 0; scoreEl.textContent = score; frameCountGlobal = 0; pipes.length = 0; bird.reset(); currentPipeSpeed = config.pipeSpeedBase; }
+
+/* -----------------------
+   Resize canvas
+   ----------------------- */
+function resizeCanvas() {
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const winW = window.innerWidth, winH = window.innerHeight;
+  let scale;
+  if (displayMode === 'pc') { scale = Math.min(winW / VIRTUAL_WIDTH, winH / VIRTUAL_HEIGHT); }
+  else { const maxW = Math.min(420, winW - 40); const maxH = Math.min(740, winH - 80); scale = Math.min(maxW / VIRTUAL_WIDTH, maxH / VIRTUAL_HEIGHT); }
+  scale = Math.max(scale, 0.5);
+  const cssW = Math.round(VIRTUAL_WIDTH * scale), cssH = Math.round(VIRTUAL_HEIGHT * scale);
+  canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+  canvas.width = Math.round(cssW * DPR); canvas.height = Math.round(cssH * DPR);
+  const sx = canvas.width / VIRTUAL_WIDTH, sy = canvas.height / VIRTUAL_HEIGHT; ctx.setTransform(sx, 0, 0, sy, 0, 0);
+}
+window.addEventListener('resize', resizeCanvas); resizeCanvas();
+
+/* -----------------------
+   Draw helpers
+   ----------------------- */
+function drawPipes() { ctx.fillStyle = '#2ecc71'; ctx.strokeStyle = '#1b8f4d'; ctx.lineWidth = 2; for (const p of pipes) { ctx.fillRect(p.x, 0, config.pipeWidth, p.top); ctx.fillRect(p.x, p.top + config.pipeGap, config.pipeWidth, VIRTUAL_HEIGHT - (p.top + config.pipeGap)); ctx.strokeRect(p.x, 0, config.pipeWidth, p.top); ctx.strokeRect(p.x, p.top + config.pipeGap, config.pipeWidth, VIRTUAL_HEIGHT - (p.top + config.pipeGap)); } }
+function drawFloor() { ctx.fillStyle = '#ded895'; ctx.fillRect(0, VIRTUAL_HEIGHT - config.floorHeight, VIRTUAL_WIDTH, config.floorHeight); ctx.strokeStyle = '#c7b86b'; for (let i = 0; i < VIRTUAL_WIDTH; i += 20) { ctx.beginPath(); ctx.moveTo(i, VIRTUAL_HEIGHT - config.floorHeight + 6); ctx.lineTo(i + 10, VIRTUAL_HEIGHT - 6); ctx.stroke(); } }
+
+/* -----------------------
+   Main loop (guarded)
+   ----------------------- */
+function showError(msg) { console.error(msg); errorBox.style.display = 'block'; errorBox.textContent = 'Error: ' + msg; }
+function loopWrapper() { try { mainLoop(); } catch (err) { showError(err?.message || String(err)); } }
+
+function mainLoop() {
+  bird.update(); if (appState === 'playing') updatePipes(); ctx.clearRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT); drawPipes(); bird.draw(); drawFloor(); ctx.fillStyle = '#000'; ctx.textAlign = 'center'; if (appState === 'ready') { ctx.font = '20px Arial'; ctx.fillText('Get Ready — Click or press Space (or move mouse) to start', VIRTUAL_WIDTH / 2, 110); ctx.font = '28px Arial'; ctx.fillText(score, VIRTUAL_WIDTH / 2, 42); } else if (appState === 'playing') { ctx.font = '28px Arial'; ctx.fillText(score, VIRTUAL_WIDTH / 2, 42); } else if (appState === 'gameover') { ctx.font = '40px Arial'; ctx.fillText('Game Over', VIRTUAL_WIDTH / 2, 150); ctx.font = '18px Arial'; ctx.fillText('Press ESC to return to the menu', VIRTUAL_WIDTH / 2, 190); } window.requestAnimationFrame(loopWrapper); }
+
+/* -----------------------
+   Start
+   ----------------------- */
+resetGameState(); resizeCanvas(); loopWrapper();
+
+/* -----------------------
+   Defensive global handlers
+   ----------------------- */
+window.addEventListener('error', (ev) => { try { showError(ev?.message || 'Unknown JS error'); } catch (e) { } });
+window.addEventListener('unhandledrejection', (ev) => { try { showError((ev && ev.reason && ev.reason.message) || 'Unhandled promise rejection'); } catch (e) { } });
+
+</script>
+</body>
+</html>

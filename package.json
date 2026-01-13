@@ -1,0 +1,28 @@
+{
+  "name": "flappy-electron",
+  "version": "1.0.0",
+  "description": "Flappy Bird clone wrapped in Electron (Made by flayric)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --windows --x64"
+  },
+  "build": {
+    "appId": "com.flappy.flayric",
+    "productName": "Flappy - Flayric",
+    "files": [
+      "**/*"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icons/win/icon.ico"
+    }
+  },
+  "devDependencies": {
+    "electron": "^26.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}
